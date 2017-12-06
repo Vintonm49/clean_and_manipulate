@@ -1,0 +1,212 @@
+---
+title: "Data Cleaning and Manipulation" 
+author: "LTC Melanie Vinton"
+date: "February 14, 2017"
+output: dscoemarkdown::dscoe
+---
+
+This tutorial provides a possible solution to a portion the practical exercise offered in the Data Incubator class presented at the Center for Army Analysis from 6-10 February 2017.  This portion of the exercise focuses on data input, cleaning, parsing, manipulation, and analysis. 
+
+### The Data
+An important consideration in healthcare costs is the variability in the cost for the same procedure.  The Centers for Medicare and Medicaid Services (CMS) has released data on pricing from FY2011 to FY2014. For FY 2014, all procedures (represented as a DRG code) are included in the dataset, while for the other years, only the top 100 are included.  The data can be found on the [CSM website](https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Medicare-Provider-Charge-Data/Inpatient.html).  More information about the data can be found at the [here](https://www.cms.gov/Research-Statistics-Data-and-Systems/Statistics-Trends-and-Reports/Medicare-Provider-Charge-Data/Inpatient2014.html). 
+
+Some data definitions include:
+
+- "Discharge" refers to the total discharges indicate the number of beneficiaries who were released from the inpatient hospital after receiving care.
+- "Average Covered Charges" refers to what the provider bills to Medicare. 
+- "Average Total Payments" refers to what Medicare actually pays to the provider as well as co-payment and deductible amounts that the beneficiary is responsible for and payments by third parties for coordination of benefits.
+
+### Split DRG Code and Text
+
+The first step is to read in the CSV files for each year (2011-2014).
+```{r echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
+data11<-read.csv("C:/Users/melanie.c.vinton/Documents/DataScience/Data Incubator/data/data/Medicare_Provider_Charge_Inpatient_DRG100_FY2011.csv")
+data12<-read.csv("C:/Users/melanie.c.vinton/Documents/DataScience/Data Incubator/data/data/Medicare_Provider_Charge_Inpatient_DRG100_FY2012.csv")
+data13<-read.csv("C:/Users/melanie.c.vinton/Documents/DataScience/Data Incubator/data/data/Medicare_Provider_Charge_Inpatient_DRG100_FY2013.csv")
+data14<-read.csv("C:/Users/melanie.c.vinton/Documents/DataScience/Data Incubator/data/data/Medicare_Provider_Charge_Inpatient_DRGALL_FY2014.csv")
+```
+```{r eval=FALSE}
+data11<-read.csv("Medicare_Provider_Charge_Inpatient_DRG100_FY2011.csv")
+data12<-read.csv("Medicare_Provider_Charge_Inpatient_DRG100_FY2012.csv")
+data13<-read.csv("Medicare_Provider_Charge_Inpatient_DRG100_FY2013.csv")
+data14<-read.csv("Medicare_Provider_Charge_Inpatient_DRGALL_FY2014.csv")
+
+```
+Next we want to split the variable "DRG.Definition" into two new variables, "DRG.Code", which contains the numeric part of "DRG.Definition", and "DRG.text", which contains the rest of "DRG.Defintion".  We will use the *separate* function in the **tidyr** package.
+```{r error=FALSE, message=FALSE, warning=FALSE}
+library(tidyr)
+data11 <- separate(data = data11,col = DRG.Definition,
+                      into = c("DRG.Code","DRG.text"), sep="-", remove=FALSE)
+data12 <- separate(data = data12,col = DRG.Definition,
+                      into = c("DRG.Code","DRG.text"), sep="-", remove=FALSE)
+data13 <- separate(data = data13,col = DRG.Definition,
+                      into = c("DRG.Code","DRG.text"), sep="-", remove=FALSE)
+data14 <- separate(data = data14,col = DRG.Definition,
+                      into = c("DRG.Code","DRG.text"), sep="-", remove=FALSE)
+
+head(names(data11),3)
+```
+### Top 100 Comparison
+Now that the data is formed the way we want, our first analysis question is to compare the data from 2011 and 2014.  We want to find the DRG Codes that were in the top 100 based on sum of total discharges in 2011 but NOT in 2014.
+
+First, we use the *summarise* function in the **dplyr** package to get the sum of total discharges for each DRG code for each year.  
+```{r error=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+drgBydischarges_14<- summarise(group_by(data14, DRG.Code),
+                             discharges = sum(Total.Discharges))
+drgBydischarges_11<- summarise(group_by(data11, DRG.Code),
+                               discharges = sum(Total.Discharges))
+head(drgBydischarges_11,3)
+```
+Next we use the *arrange* function in the **dplyr** package to put each of the resulting data frames in descending order by the sum of total discharges.  Then we subset out the top 100.  (note the 2011 only contains 100 DRG codes so it does not need to be subsetted).  You could use the resulting dataframes to determine which procedures each year are the most common.  We display the top 3 from 2011 using the *head* function.
+```{r error=FALSE, message=FALSE, warning=FALSE}
+drgBydischarges_14<-arrange(drgBydischarges_14,desc(discharges))
+drgBydischarges_11<-arrange(drgBydischarges_11,desc(discharges))
+top100_byDischarges14<-drgBydischarges_14[1:100,]
+head(drgBydischarges_11,3)
+```
+Finally, we create a vector for each year that holds the DRG codes that are in the top 100.  Then we 
+compare those two vectors and determine which DRG codes are contained in the 2011 vector but not the 2014 vector.  We do this using the *setdiff* function in the **dplyr** package.
+```{r error=FALSE, message=FALSE, warning=FALSE}
+top100DRG14<-top100_byDischarges14$DRG.Code  #vector of DRG codes
+top100DRG11<-drgBydischarges_11$DRG.Code  #vector of DRG codes
+topdiff_discharges <- as.data.frame(setdiff(top100DRG11,top100DRG14))
+```
+Now we add the text describing the DRG code using the *distinct* function in the **dplyr** package.  We join the DRG codes with the text using the *left_join* function from the **dplyr** package.
+```{r error=FALSE, message=FALSE, warning=FALSE}
+drg11 <- distinct(data11[,2:3])
+names(topdiff_discharges)[1]<-"DRG.Code"
+topdiff2 <- left_join(topdiff_discharges, drg11)
+topdiff2
+```
+### DRG Diversity
+The next analysis question is to look at the distribution of the number of services (indicated by DRG Code) that different providers offer.  Using the 2014 data, we want to identify the top 50 providers in terms of number of services, based on the total number of unique DRG codes.
+
+First, we *summarise* by provider and *arrange* the data in descending order according to the number of DRG codes.  Then we *subset* for the top 50 providers.
+```{r}
+provider<- summarise(group_by(data14, Provider.Name), distinctDRGs = n_distinct(DRG.Code))
+provider<-arrange(provider, desc(distinctDRGs))
+provider50<-provider[1:50,]
+head(provider50, 3)
+```
+Now we want to plot the distribution.  We set the order of names of providers by distinct DRGs using the *order* function.  We use the *factor* function to plot in order of number of distinct DRG codes, instead of alphabetic order of the provider names.
+```{r}
+provider50 <- provider50[order(-provider50$distinctDRGs),]
+provider50$Provider.Name=factor(provider50$Provider.Name,levels=provider50$Provider.Name)
+```
+Next we use the **ggplot2** package to plot the number of distinct DRGs for each provider in the top50.  We use the *coord_flip* function to list the provider names on the y-axis and orient the bar horizontally instead of vertically, making the provider names easier to read.  The *theme* function with the "axis.title.x=element_blank()" parameter eliminates the axis label, which we repeat for both axes.  We also change the text size of the y-axis using the *theme* function.
+```{r error=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+distro<-ggplot(data=provider50, aes(x=factor(Provider.Name),y=distinctDRGs)) +
+  coord_flip()+
+  geom_bar(colour="black", stat="identity", width = .5) +
+  ggtitle("Number of Unique Procedures \nPerformed by Provider")+
+  theme(axis.title.x = element_blank()) + #eliminate y axis label
+  theme(axis.title.y = element_blank()) +
+  #theme(plot.title = element_text(hjust = 0.5)) + #center the title
+  theme(axis.text.y = element_text(size=5))
+distro
+```
+
+### Cost Variability
+The next analysis question is finding the top 100 procedures with the highest coefficient of variation of the Average Total Cost.  We only want to consider procedures that are provided by at least 10 organizations.  The coefficient of variation is a measure of spread that describes the amount of variability relative to the mean. Because the coefficient of variation is unitless, you can use it instead of the standard deviation to compare the spread of data sets that have different units or different means.  The first step is to create a function that calculates the coefficient of variation.
+```{r}
+co.var <- function(x) {
+  100*sd(x)/mean(x)
+}
+```
+Next we use the *group_by* function in the **dplyr** package to group the data by DRG code.  We then summarize each group by number of providers that offer the procedure.  Then we subset that dataframe to include only DRG codes used by at least 10 providers with the *filter* function from the **dplyr** package.
+```{r}
+by_DRG<-group_by(data14,DRG.Code)
+numProvider<-summarise(by_DRG,providerAmt= n_distinct(Provider.Name))
+numProvider2 <- filter(numProvider, providerAmt>=10)
+head(numProvider2,2)
+```
+We calculate the cost variability using our coefficient of variation function (*co.var*) inside the *summarise* function and then join that to our provider data.  Then we arrange the data by descending values of the coefficient of variation and round the number to 2 decimal places.  Finally, we subset the data to just the top 100 DRG codes.  We see that the spread of payments for DRG code 073 is significantly higher than even the next most variable procedure, DRG code 302.
+```{r}
+costVar <- summarise(by_DRG, coefVar=co.var(Average.Total.Payments))
+cost_join <- left_join(numProvider2,costVar)
+costVar100 <- arrange(cost_join, desc(coefVar))
+costVar100$coefVar <- round(costVar100$coefVar, digits=2)
+costVar100<-costVar100[1:100,]
+head(costVar100,3)
+```
+Next we want to map the cost variability at the state level (CONUS).  First we create a map of states using the *map_data* function in the **maps** package.  We will need to merge this map with our data, so we create a column in our map dataframe for the state abbreviations using the *state.abb* function.
+```{r error=FALSE, message=FALSE, warning=FALSE}
+library(maps)
+statesMap<-map_data("state")
+statesMap$state <- state.abb[match(statesMap$region, tolower(state.name))]
+```
+To map the data by state, we group the dataset by "Provider.State" variable and then *summarise* using our *co.var* function, rounding the result of the calculation.  Then we change the variable name for "Provider.State" to match the map dataframe, so we can merge the two datasets.
+```{r}
+by_state<-group_by(data14,Provider.State)
+stateVar <- summarise(by_state, coefVar=co.var(Average.Total.Payments))
+stateVar$coefVar <- round(stateVar$coefVar, digits=2)
+stateVar<-rename(stateVar,state=Provider.State)
+choropleth <- merge(statesMap, stateVar, by = "state")
+```
+Next we use the *geom_polygon* function in **ggplot2** to create a map of CONUS states, colored by the coefficient of variation of the average total payments.  You can see that certain states have much more variability in their costs than others.
+```{r}
+choropleth<-choropleth[order(choropleth$order), ]
+
+state_coVar<-ggplot()+
+  geom_polygon(data=choropleth, aes(long,lat, group=group, fill=coefVar),
+               color="black",size=.2)+
+  coord_map()+
+  scale_fill_distiller(palette="Blues", direction = 1)+
+  labs(x="", y="",fill="", title="Coeficient of Variation")+ #labels
+  theme(axis.ticks.y = element_blank(),axis.text.y = element_blank(), # get rid of x ticks/text
+        axis.ticks.x = element_blank(),axis.text.x = element_blank(),
+        panel.background = element_blank())
+state_coVar
+```
+
+### Expensive Providers in New York
+The next analysis question is to identify providers that appear to over-charge for procedures compared to the state average cost.  We will use the 2014 dataset and only want to look at DRG codes that are serviced by at least 10 providers.  First we create a simple function to calculate a percentage, to reference later.  Then we filter the 2014 dataset for just the state of New York.
+```{r}
+percent_compare <- function(x,y) {
+  round(100*(x/y),0)
+}
+
+nydata<-filter(data14,Provider.State=="NY")
+```
+Next we repeat the procedure for filtering DRG codes used by at least 10 providers using the *group_by*, *summarise*, *left_join*, and *filter* functions.
+```{r}
+by_DRGny<-group_by(nydata,DRG.Code)
+numProviderny<-summarise(by_DRGny,providerAmt= n_distinct(Provider.Name))
+ny_join<-left_join(nydata,numProviderny,by="DRG.Code")
+ny_join10 <- filter(ny_join, providerAmt>=10)
+```
+The next step is to calculate the mean of the Average Total Payments across providers for each DRG code.  Note that the "Average.Total.Payments" variable is the average that that provider charged for that DRG code across its discharges.  For example, DRG code 001 is a heart transplant or implant.  Mount Sinai Hospital had 17 discharges for DRG code 001 with an average of about $280k in total payment for that procedure, while New York Presbyterian Hospital had 48 discharges for DRG code 001 with an average total payment of about $334k.  We want to calculate the mean across all providers.  To do this, we again use the *group_by*, *summarise*, and *left_join*.
+```{r}
+by_DRGny10<-group_by(ny_join10,DRG.Code)
+ny_avgDRG <- summarise(by_DRGny10,avgDRG=mean(Average.Total.Payments))
+ny_join10<-left_join(ny_join10,ny_avgDRG,by="DRG.Code")
+```
+From here we use our *percent_compare* function to provide a percentage that relates how each provide compares to the state average, with the value of 100 denoting "equal to state average", anything above 100 indicating a payment average above the state average, and below 100 indicating less than the state average.  This is captured in a new variable called "PerOverunder".  You can see from the summary statistics that at least one provider charges almost 4 times that state average for a procedure.
+```{r}
+ny_join10$PerOverunder<-percent_compare(ny_join10$Average.Total.Payments,ny_join10$avgDRG)
+summary(ny_join10$PerOverunder)
+```
+To quickly explore the most expensive providers, we arrange the dataset by the "PerOverunder" variable and display just the first row.  From this we find that a provider in Buffalo, NY, had 35 discharges for Spinal Fusion with an average total payment of over $134k, compared to the state average of about $34k.
+```{r}
+ny_join10 %>% arrange(desc(PerOverunder)) %>% head(1)[c("DRG.text","Provider.Name","Provider.City","Total.Discharges","Average.Total.Payments","avgDRG")]
+```
+To get a sense of the providers who consistently charge more than the state average across DRGs, we *group_by* the "Provider.Name", *summarise* with the average of the "PerOverunder" variable, and *arrange* in descending order of the "AvgOverunder" variable, which indicates the mean percentage relative to the state average of the provider's average total payments across all DRG codes that they service.  In other words, are they cheap or expensive compared to the rest of the state.  The three most expensive providers are listed.
+```{r}
+by_nyprovider<-group_by(ny_join10,Provider.Name)
+by_nyprovider<-summarise(by_nyprovider, AvgOverunder=round(mean(PerOverunder),2))
+by_nyprovider<-arrange(by_nyprovider,desc(AvgOverunder))
+head(by_nyprovider,3)
+```
+
+These are just a few questions that could be answered using this dataset.  Hopefully this tutorial provides some examples for ways to manipulate data in R, especially using the **dplyr** package, to extract insight from data.
+
+
+
+
+
+
+
+
+
